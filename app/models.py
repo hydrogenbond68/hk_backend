@@ -13,6 +13,7 @@ class User(db.Model):
     company_name = db.Column(db.String(100))
     phone = db.Column(db.String(20))
     address = db.Column(db.Text)
+    profile_image = db.Column(db.String(500))
     is_admin = db.Column(db.Boolean, default=False)
     is_verified = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -38,6 +39,7 @@ class User(db.Model):
             'company_name': self.company_name,
             'phone': self.phone,
             'address': self.address,
+            'profile_image': self.profile_image,
             'is_admin': self.is_admin,
             'is_verified': self.is_verified,
             'created_at': self.created_at.isoformat()
@@ -55,8 +57,8 @@ class Product(db.Model):
     sub_category = db.Column(db.String(50))
     stock_quantity = db.Column(db.Integer, default=0)
     min_order_quantity = db.Column(db.Integer, default=1)
-    image_urls = db.Column(db.Text)  # JSON array of image URLs
-    specifications = db.Column(db.Text)  # JSON object of specs
+    image_urls = db.Column(db.Text)
+    specifications = db.Column(db.Text)
     is_featured = db.Column(db.Boolean, default=False)
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -103,7 +105,7 @@ class Order(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     order_number = db.Column(db.String(20), unique=True, nullable=False)
     total_amount = db.Column(db.Float, nullable=False)
-    status = db.Column(db.String(20), default='pending')  # pending, processing, shipped, delivered, cancelled
+    status = db.Column(db.String(20), default='pending')
     shipping_address = db.Column(db.Text, nullable=False)
     shipping_method = db.Column(db.String(50))
     payment_method = db.Column(db.String(50))
