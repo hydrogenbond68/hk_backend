@@ -16,21 +16,22 @@ def add_cache_headers(response):
     response.headers['Expires'] = '0'
     return response
 
+# ============= GET ALL PRODUCTS =============
 @product_bp.route('', methods=['GET'])
 def get_products():
     try:
         page = request.args.get('page', 1, type=int)
         per_page = request.args.get('per_page', 20, type=int)
         category = request.args.get('category')
-        sub_category = request.args.get('sub_category')
         search = request.args.get('search')
         min_price = request.args.get('min_price') or request.args.get('minPrice')
         max_price = request.args.get('max_price') or request.args.get('maxPrice')
         sort_by = request.args.get('sort_by') or request.args.get('sortBy', 'created_at')
         sort_order = request.args.get('sort_order') or request.args.get('sortOrder', 'desc')
         featured = request.args.get('featured', type=bool)
-        timestamp = request.args.get('_t')  # Cache-busting parameter
+        include_inactive = request.args.get('include_inactive', type=bool)
         
+        # Parse price filters
         if min_price and min_price != 'undefined':
             try:
                 min_price = float(min_price)
@@ -47,12 +48,16 @@ def get_products():
         else:
             max_price = None
         
-        query = Product.query.filter_by(is_active=True)
+        # Build query
+        query = Product.query
         
+        # Filter by active status (admin can see inactive)
+        if not include_inactive:
+            query = query.filter_by(is_active=True)
+        
+        # Apply filters
         if category and category != 'undefined':
             query = query.filter_by(category=category)
-        if sub_category and sub_category != 'undefined':
-            query = query.filter_by(sub_category=sub_category)
         if search and search != 'undefined':
             query = query.filter(
                 Product.name.ilike(f'%{search}%') | 
@@ -65,6 +70,7 @@ def get_products():
         if featured:
             query = query.filter_by(is_featured=True)
         
+        # Apply sorting
         if sort_by and sort_by != 'undefined':
             sort_column = getattr(Product, sort_by, Product.created_at)
             if sort_order == 'asc':
@@ -74,6 +80,7 @@ def get_products():
         else:
             query = query.order_by(Product.created_at.desc())
         
+        # Pagination
         paginated = query.paginate(page=page, per_page=per_page, error_out=False)
         
         response = make_response(jsonify({
@@ -93,6 +100,7 @@ def get_products():
         logger.error(f"Error in get_products: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
+# ============= GET SINGLE PRODUCT =============
 @product_bp.route('/<int:product_id>', methods=['GET'])
 def get_product(product_id):
     try:
@@ -104,15 +112,22 @@ def get_product(product_id):
         logger.error(f"Error in get_product: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
+# ============= CREATE PRODUCT (Admin Only) =============
 @product_bp.route('', methods=['POST'])
 @jwt_required()
 def create_product():
     try:
         user_id = get_jwt_identity()
-        user = User.query.get(int(user_id))
+        if isinstance(user_id, str):
+            user_id = int(user_id)
+        
+        user = User.query.get(user_id)
         
         if not user:
             return jsonify({'error': 'User not found'}), 404
+        
+        if not user.is_admin:
+            return jsonify({'error': 'Admin access required'}), 403
         
         data = request.get_json()
         logger.info(f"Creating product with data: {data}")
@@ -121,6 +136,7 @@ def create_product():
         if not all(field in data for field in required):
             return jsonify({'error': 'Missing required fields'}), 400
         
+        # Handle image_urls
         image_urls = data.get('image_urls', [])
         if isinstance(image_urls, str):
             try:
@@ -130,6 +146,7 @@ def create_product():
         if not isinstance(image_urls, list):
             image_urls = []
         
+        # Handle specifications
         specifications = data.get('specifications', {})
         if isinstance(specifications, str):
             try:
@@ -156,6 +173,8 @@ def create_product():
         db.session.add(product)
         db.session.commit()
         
+        logger.info(f"Product created successfully: {product.id} - {product.name}")
+        
         response = make_response(jsonify({
             'message': 'Product created successfully',
             'product': product.to_dict()
@@ -168,13 +187,20 @@ def create_product():
         logger.error(f"Error in create_product: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
+# ============= UPDATE PRODUCT (Admin Only) =============
 @product_bp.route('/<int:product_id>', methods=['PUT'])
 @jwt_required()
 def update_product(product_id):
     try:
         user_id = get_jwt_identity()
-        user = User.query.get(int(user_id))
+        if isinstance(user_id, str):
+            user_id = int(user_id)
+        
+        user = User.query.get(user_id)
         product = Product.query.get_or_404(product_id)
+        
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
         
         if not user.is_admin and product.seller_id != user.id:
             return jsonify({'error': 'Unauthorized'}), 403
@@ -182,6 +208,7 @@ def update_product(product_id):
         data = request.get_json()
         logger.info(f"Updating product {product_id} with data: {data}")
         
+        # Update allowed fields
         allowed_fields = ['name', 'description', 'price', 'category', 'sub_category', 
                          'stock_quantity', 'min_order_quantity', 'is_featured', 'is_active']
         
@@ -194,6 +221,7 @@ def update_product(product_id):
                 else:
                     setattr(product, field, data[field])
         
+        # Handle image_urls
         if 'image_urls' in data and data['image_urls'] is not None:
             image_urls = data['image_urls']
             if isinstance(image_urls, str):
@@ -205,6 +233,7 @@ def update_product(product_id):
                 image_urls = []
             product.image_urls = json.dumps(image_urls)
         
+        # Handle specifications
         if 'specifications' in data and data['specifications'] is not None:
             specifications = data['specifications']
             if isinstance(specifications, str):
@@ -219,6 +248,8 @@ def update_product(product_id):
         product.updated_at = datetime.utcnow()
         db.session.commit()
         
+        logger.info(f"Product updated successfully: {product.id} - {product.name}")
+        
         response = make_response(jsonify({
             'message': 'Product updated successfully',
             'product': product.to_dict()
@@ -231,19 +262,30 @@ def update_product(product_id):
         logger.error(f"Error in update_product: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
+# ============= DELETE PRODUCT (Admin Only) =============
 @product_bp.route('/<int:product_id>', methods=['DELETE'])
 @jwt_required()
 def delete_product(product_id):
     try:
         user_id = get_jwt_identity()
-        user = User.query.get(int(user_id))
+        if isinstance(user_id, str):
+            user_id = int(user_id)
+        
+        user = User.query.get(user_id)
         product = Product.query.get_or_404(product_id)
+        
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
         
         if not user.is_admin and product.seller_id != user.id:
             return jsonify({'error': 'Unauthorized'}), 403
         
+        # Soft delete - just deactivate
         product.is_active = False
+        product.updated_at = datetime.utcnow()
         db.session.commit()
+        
+        logger.info(f"Product deleted (deactivated): {product.id} - {product.name}")
         
         response = make_response(jsonify({'message': 'Product deleted successfully'}), 200)
         response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate'
@@ -253,6 +295,7 @@ def delete_product(product_id):
         logger.error(f"Error in delete_product: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
+# ============= GET CATEGORIES =============
 @product_bp.route('/categories', methods=['GET'])
 def get_categories():
     try:
@@ -264,4 +307,46 @@ def get_categories():
         return response
     except Exception as e:
         logger.error(f"Error in get_categories: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+# ============= BULK UPDATE PRODUCTS (Admin Only) =============
+@product_bp.route('/bulk-update', methods=['POST'])
+@jwt_required()
+def bulk_update_products():
+    try:
+        user_id = get_jwt_identity()
+        if isinstance(user_id, str):
+            user_id = int(user_id)
+        
+        user = User.query.get(user_id)
+        
+        if not user or not user.is_admin:
+            return jsonify({'error': 'Admin access required'}), 403
+        
+        data = request.get_json()
+        product_ids = data.get('product_ids', [])
+        update_data = data.get('update_data', {})
+        
+        if not product_ids or not update_data:
+            return jsonify({'error': 'Product IDs and update data required'}), 400
+        
+        updated_count = 0
+        for product_id in product_ids:
+            product = Product.query.get(product_id)
+            if product:
+                for field, value in update_data.items():
+                    if hasattr(product, field):
+                        setattr(product, field, value)
+                product.updated_at = datetime.utcnow()
+                updated_count += 1
+        
+        db.session.commit()
+        
+        return jsonify({
+            'message': f'Updated {updated_count} products',
+            'updated_count': updated_count
+        }), 200
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Error in bulk_update_products: {str(e)}")
         return jsonify({'error': str(e)}), 500

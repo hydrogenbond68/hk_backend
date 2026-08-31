@@ -1,6 +1,8 @@
 from app import db
 from datetime import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
+import secrets
+import string
 
 class User(db.Model):
     __tablename__ = 'users'
@@ -16,7 +18,10 @@ class User(db.Model):
     profile_image = db.Column(db.String(500))
     is_admin = db.Column(db.Boolean, default=False)
     is_verified = db.Column(db.Boolean, default=False)
+    reset_token = db.Column(db.String(100))
+    reset_token_expiry = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     # Relationships
     products = db.relationship('Product', backref='seller', lazy=True)
@@ -30,6 +35,28 @@ class User(db.Model):
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
     
+    def generate_reset_token(self):
+        """Generate a password reset token"""
+        alphabet = string.ascii_letters + string.digits
+        token = ''.join(secrets.choice(alphabet) for _ in range(32))
+        self.reset_token = token
+        self.reset_token_expiry = datetime.utcnow() + timedelta(hours=24)
+        return token
+    
+    def verify_reset_token(self, token):
+        """Verify if a reset token is valid"""
+        if not self.reset_token or not self.reset_token_expiry:
+            return False
+        if self.reset_token != token:
+            return False
+        if datetime.utcnow() > self.reset_token_expiry:
+            return False
+        return True
+    
+    def clear_reset_token(self):
+        self.reset_token = None
+        self.reset_token_expiry = None
+    
     def to_dict(self):
         return {
             'id': self.id,
@@ -42,7 +69,8 @@ class User(db.Model):
             'profile_image': self.profile_image,
             'is_admin': self.is_admin,
             'is_verified': self.is_verified,
-            'created_at': self.created_at.isoformat()
+            'created_at': self.created_at.isoformat(),
+            'updated_at': self.updated_at.isoformat()
         }
 
 class Product(db.Model):
