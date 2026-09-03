@@ -25,11 +25,20 @@ def create_app():
     
     db.init_app(app)
     jwt = JWTManager(app)
-    CORS(app, origins=['http://localhost:3000', 'http://localhost:5173', 'http://localhost:5174', 'http://127.0.0.1:5173', 'https://caterer-unarmored-chunk.ngrok-free.dev'])
+    
+    # ============= UPDATED CORS =============
+    CORS(app, origins=[
+        'http://localhost:3000',
+        'http://localhost:5173', 
+        'http://localhost:5174',
+        'http://127.0.0.1:5173',
+        'https://hk-backend-1.onrender.com',
+        'https://hydrogenbond68.github.io',  # Your GitHub Pages frontend
+        '*'
+    ])
     
     from app import models
     
-    # Register routes
     from app.routes.auth_routes import auth_bp
     from app.routes.product_routes import product_bp
     from app.routes.order_routes import order_bp
