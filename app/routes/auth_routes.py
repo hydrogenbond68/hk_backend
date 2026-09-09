@@ -43,7 +43,7 @@ def register():
             phone=data.get('phone'),
             address=data.get('address'),
             profile_image=data.get('profile_image'),
-            is_admin=data.get('is_admin', False),
+            is_admin=False,
             is_verified=False
         )
         user.set_password(data['password'])
@@ -124,15 +124,14 @@ def forgot_password():
         db.session.commit()
         
         # In production, send email with reset link
-        # For now, return the token (in development)
-        reset_link = f"http://localhost:5173/reset-password?token={token}"
+        frontend_url = os.environ.get('FRONTEND_URL', 'https://harykimsintertech.netlify.app')
+        reset_link = f"{frontend_url}/reset-password?token={token}"
         
         logger.info(f"Password reset requested for: {user.email}")
         
         return jsonify({
             'message': 'Password reset link sent to your email',
-            'reset_token': token,  # Remove in production
-            'reset_link': reset_link  # Remove in production
+            'reset_link': reset_link
         }), 200
     except Exception as e:
         logger.error(f"Forgot password error: {str(e)}")
