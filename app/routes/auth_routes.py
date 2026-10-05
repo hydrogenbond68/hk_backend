@@ -1,4 +1,5 @@
 from flask import Blueprint, request, jsonify
+from werkzeug.exceptions import HTTPException
 from flask_jwt_extended import create_access_token, create_refresh_token, jwt_required, get_jwt_identity
 from app import db
 from app.models import User
@@ -63,6 +64,8 @@ def register():
             'access_token': access_token,
             'refresh_token': refresh_token
         }), 201
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Registration error: {str(e)}")
         db.session.rollback()
@@ -99,6 +102,8 @@ def login():
             'access_token': access_token,
             'refresh_token': refresh_token
         }), 200
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Login error: {str(e)}")
         return jsonify({'error': str(e)}), 500
@@ -133,6 +138,8 @@ def forgot_password():
             'message': 'Password reset link sent to your email',
             'reset_link': reset_link
         }), 200
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Forgot password error: {str(e)}")
         db.session.rollback()
@@ -172,6 +179,8 @@ def reset_password():
         return jsonify({
             'message': 'Password reset successfully! You can now login with your new password.'
         }), 200
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Reset password error: {str(e)}")
         db.session.rollback()
@@ -192,6 +201,8 @@ def get_current_user():
             return jsonify({'error': 'User not found'}), 404
         
         return jsonify({'user': user.to_dict()}), 200
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Get user error: {str(e)}")
         return jsonify({'error': str(e)}), 500
@@ -231,6 +242,8 @@ def update_profile():
             'message': 'Profile updated successfully',
             'user': user.to_dict()
         }), 200
+    except HTTPException:
+        raise
     except Exception as e:
         db.session.rollback()
         logger.error(f"Profile update error: {str(e)}")
@@ -244,6 +257,8 @@ def refresh():
         user_id = get_jwt_identity()
         new_access_token = create_access_token(identity=str(user_id))
         return jsonify({'access_token': new_access_token}), 200
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Refresh error: {str(e)}")
         return jsonify({'error': str(e)}), 500
@@ -267,6 +282,8 @@ def get_all_users():
             'users': [user.to_dict() for user in users],
             'total': len(users)
         }), 200
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Get users error: {str(e)}")
         return jsonify({'error': str(e)}), 500
@@ -301,6 +318,8 @@ def update_user_role(user_id):
             }), 200
         
         return jsonify({'error': 'is_admin field required'}), 400
+    except HTTPException:
+        raise
     except Exception as e:
         db.session.rollback()
         logger.error(f"Update user role error: {str(e)}")
@@ -331,6 +350,8 @@ def delete_user(user_id):
         db.session.commit()
         
         return jsonify({'message': 'User deleted successfully'}), 200
+    except HTTPException:
+        raise
     except Exception as e:
         db.session.rollback()
         logger.error(f"Delete user error: {str(e)}")

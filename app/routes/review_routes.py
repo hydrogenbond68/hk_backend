@@ -16,7 +16,8 @@ def get_product_reviews(product_id):
         'total_reviews': len(reviews)
     }), 200
 
-@review_bp.route('/', methods=['POST'])
+# No trailing slash: see the note in order_routes.py on 308 redirects and CORS.
+@review_bp.route('', methods=['POST'])
 @jwt_required()
 def create_review():
     user_id = get_jwt_identity()

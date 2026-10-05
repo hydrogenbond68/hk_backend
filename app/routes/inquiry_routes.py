@@ -6,7 +6,8 @@ from datetime import datetime
 
 inquiry_bp = Blueprint('inquiries', __name__)
 
-@inquiry_bp.route('/', methods=['POST'])
+# No trailing slash: see the note in order_routes.py on 308 redirects and CORS.
+@inquiry_bp.route('', methods=['POST'])
 @jwt_required()
 def create_inquiry():
     user_id = get_jwt_identity()

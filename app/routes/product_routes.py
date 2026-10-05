@@ -1,5 +1,7 @@
 from flask import Blueprint, request, jsonify, make_response
+from werkzeug.exceptions import HTTPException
 from flask_jwt_extended import jwt_required, get_jwt_identity
+from sqlalchemy import or_
 from app import db
 from app.models import Product, User
 import json
@@ -96,6 +98,8 @@ def get_products():
         response.headers['Pragma'] = 'no-cache'
         response.headers['Expires'] = '0'
         return response
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error in get_products: {str(e)}")
         return jsonify({'error': str(e)}), 500
@@ -108,8 +112,83 @@ def get_product(product_id):
         response = make_response(jsonify({'product': product.to_dict()}))
         response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate'
         return response
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error in get_product: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+def rank_related(candidates, source, limit):
+    """Score candidates by how much they overlap with the product being viewed.
+
+    Relevance is re-checked here instead of being trusted from the query, so a
+    candidate that shares nothing with the source can never be surfaced. This
+    Product model has no ``tags`` column, so shared category and sub-category
+    are the only overlap signals available.
+    """
+    scored = []
+    for product in candidates:
+        if product.id == source.id:
+            continue
+        same_category = product.category == source.category
+        same_sub = bool(source.sub_category) and product.sub_category == source.sub_category
+        if not (same_category or same_sub):
+            continue
+
+        score = 0.0
+        if same_category:
+            score += 4
+        if same_sub:
+            score += 2
+        score += min(product.get_average_rating(), 5) / 5
+        scored.append((score, product))
+
+    # created_at breaks ties so ordering stays deterministic between requests,
+    # newest first so a related rail is not filled with the oldest stock.
+    scored.sort(key=lambda pair: (-pair[0], -(pair[1].created_at.timestamp() if pair[1].created_at else 0)))
+    return [product.to_dict() for _, product in scored[:limit]]
+
+# ============= GET RELATED PRODUCTS =============
+@product_bp.route('/<int:product_id>/related', methods=['GET'])
+def get_related_products(product_id):
+    try:
+        source = db.session.get(Product, product_id)
+        if not source:
+            return jsonify({'error': 'Product not found'}), 404
+
+        try:
+            limit = request.args.get('limit', 6, type=int)
+        except (TypeError, ValueError):
+            limit = 6
+        if limit is None:
+            limit = 6
+        limit = max(1, min(limit, 12))
+
+        # Over-fetch because scoring happens in Python: the query is bounded by
+        # relevance, the exact ordering is not.
+        conditions = [Product.category == source.category]
+        if source.sub_category:
+            conditions.append(Product.sub_category == source.sub_category)
+
+        candidates = (
+            Product.query
+            .filter(
+                Product.id != source.id,
+                Product.is_active.is_(True),
+                or_(*conditions),
+            )
+            .order_by(Product.created_at.desc())
+            .limit(limit * 5)
+            .all()
+        )
+
+        response = make_response(jsonify({'products': rank_related(candidates, source, limit)}))
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate'
+        return response
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in get_related_products: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 # ============= CREATE PRODUCT (Admin Only) =============
@@ -182,6 +261,8 @@ def create_product():
         
         response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate'
         return response
+    except HTTPException:
+        raise
     except Exception as e:
         db.session.rollback()
         logger.error(f"Error in create_product: {str(e)}")
@@ -257,6 +338,8 @@ def update_product(product_id):
         
         response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate'
         return response
+    except HTTPException:
+        raise
     except Exception as e:
         db.session.rollback()
         logger.error(f"Error in update_product: {str(e)}")
@@ -290,6 +373,8 @@ def delete_product(product_id):
         response = make_response(jsonify({'message': 'Product deleted successfully'}), 200)
         response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate'
         return response
+    except HTTPException:
+        raise
     except Exception as e:
         db.session.rollback()
         logger.error(f"Error in delete_product: {str(e)}")
@@ -305,6 +390,8 @@ def get_categories():
         }))
         response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate'
         return response
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error in get_categories: {str(e)}")
         return jsonify({'error': str(e)}), 500
@@ -346,6 +433,8 @@ def bulk_update_products():
             'message': f'Updated {updated_count} products',
             'updated_count': updated_count
         }), 200
+    except HTTPException:
+        raise
     except Exception as e:
         db.session.rollback()
         logger.error(f"Error in bulk_update_products: {str(e)}")

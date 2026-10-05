@@ -5,7 +5,8 @@ from app.models import Wishlist, Product, User
 
 wishlist_bp = Blueprint('wishlist', __name__)
 
-@wishlist_bp.route('/', methods=['GET'])
+# No trailing slash: see the note in order_routes.py on 308 redirects and CORS.
+@wishlist_bp.route('', methods=['GET'])
 @jwt_required()
 def get_wishlist():
     user_id = get_jwt_identity()

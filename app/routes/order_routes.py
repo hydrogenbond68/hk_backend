@@ -1,4 +1,5 @@
 from flask import Blueprint, request, jsonify
+from werkzeug.exceptions import HTTPException
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app import db
 from app.models import Order, OrderItem, Product, User
@@ -12,7 +13,10 @@ logger = logging.getLogger(__name__)
 def generate_order_number():
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=12))
 
-@order_bp.route('/', methods=['POST'])
+# Registered without a trailing slash so the canonical path is /api/orders.
+# A '/' here makes Flask answer /api/orders with a 308 redirect, which fails the
+# browser's CORS preflight and surfaces to the client as "Failed to fetch".
+@order_bp.route('', methods=['POST'])
 @jwt_required()
 def create_order():
     try:
@@ -72,12 +76,14 @@ def create_order():
             'message': 'Order created successfully',
             'order': order.to_dict()
         }), 201
+    except HTTPException:
+        raise
     except Exception as e:
         db.session.rollback()
         logger.error(f"Error creating order: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
-@order_bp.route('/', methods=['GET'])
+@order_bp.route('', methods=['GET'])
 @jwt_required()
 def get_orders():
     try:
@@ -93,6 +99,8 @@ def get_orders():
             orders = Order.query.filter_by(user_id=user.id).order_by(Order.created_at.desc()).all()
         
         return jsonify({'orders': [order.to_dict() for order in orders]}), 200
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error fetching orders: {str(e)}")
         return jsonify({'error': str(e)}), 500
@@ -113,6 +121,8 @@ def get_order(order_id):
             return jsonify({'error': 'Unauthorized'}), 403
         
         return jsonify({'order': order.to_dict()}), 200
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error fetching order {order_id}: {str(e)}")
         return jsonify({'error': str(e)}), 500
@@ -143,6 +153,8 @@ def update_order_status(order_id):
             'message': 'Order status updated',
             'order': order.to_dict()
         }), 200
+    except HTTPException:
+        raise
     except Exception as e:
         db.session.rollback()
         logger.error(f"Error updating order status {order_id}: {str(e)}")
