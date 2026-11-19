@@ -1,5 +1,4 @@
 from flask import Flask, request, jsonify
-from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from flask_jwt_extended import JWTManager
 from werkzeug.exceptions import HTTPException
@@ -43,6 +42,73 @@ def resolve_allowed_origins():
 
 def create_app():
     app = Flask(__name__)
+    # === BULLETPROOF CORS (auto-generated) ===
+    import re as _cors_re
+    from flask import request as _cors_request
+    from flask_cors import CORS as _CORS
+
+    _CORS_LOCAL_REGEX = r"https?://(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(:\d+)?"
+    _CORS_PROD_LIST = [
+        # Add production origins here, e.g. "https://hk.example.com",
+    ]
+
+    # Single canonical CORS registration — no other CORS() call should exist.
+    _CORS(
+        app,
+        resources={r"/*": {"origins": [_CORS_LOCAL_REGEX] + _CORS_PROD_LIST}},
+        supports_credentials=True,
+        allow_headers="*",
+        expose_headers=["Content-Type", "Authorization"],
+        methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        max_age=600,
+        send_wildcard=False,
+    )
+
+    _CORS_LOCAL_RE = _cors_re.compile(
+        r"^https?://(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(:\d+)?$"
+    )
+    _CORS_PROD_SET = set(_CORS_PROD_LIST)
+
+    def _cors_allow(origin):
+        if not origin:
+            return False
+        if _CORS_LOCAL_RE.match(origin):
+            return True
+        return origin in _CORS_PROD_SET
+
+    @app.after_request
+    def _force_cors_headers(resp):
+        origin = _cors_request.headers.get("Origin")
+        if origin and _cors_allow(origin):
+            if "Access-Control-Allow-Origin" not in resp.headers:
+                resp.headers["Access-Control-Allow-Origin"] = origin
+            resp.headers["Access-Control-Allow-Credentials"] = "true"
+            resp.headers["Vary"] = "Origin"
+            resp.headers["Access-Control-Allow-Headers"] = (
+                "Content-Type, Authorization, ngrok-skip-browser-warning, "
+                "X-Requested-With, Cache-Control, Pragma, Expires, Idempotency-Key"
+            )
+            resp.headers["Access-Control-Allow-Methods"] = (
+                "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+            )
+        return resp
+
+    # Socket.IO stubs — BOTH variants so GET /socket.io/ never hits the OPTIONS catch-all.
+    @app.route("/socket.io/", methods=["GET", "POST", "OPTIONS"])
+    @app.route("/socket.io/<path:_siopath>", methods=["GET", "POST", "OPTIONS"])
+    def _socketio_stub(_siopath=""):
+        return ({"status": "socket.io not enabled on this backend"}, 501)
+
+    # Catch-all OPTIONS so preflight on unknown paths still returns 204.
+    @app.route("/<path:_any>", methods=["OPTIONS"])
+    def _cors_preflight_safety(_any=""):
+        return ("", 204)
+    # === END BULLETPROOF CORS ===
+
+    
+    
+    
+    
 
     is_production = os.environ.get('NODE_ENV') == 'production' or bool(os.environ.get('RENDER'))
 
@@ -76,7 +142,6 @@ def create_app():
     allowed_origins = resolve_allowed_origins()
     allows_wildcard = '*' in allowed_origins
 
-    CORS(app, origins=allowed_origins, allow_headers=['Content-Type', 'Authorization', 'Cache-Control', 'Pragma', 'Expires', 'ngrok-skip-browser-warning'], methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'])
 
     @app.after_request
     def add_cors_headers(response):
